@@ -988,7 +988,7 @@ export default function QuizPage() {
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Advanced Quiz System</span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white tracking-tight">Sacred Texts Quiz</h1>
+            <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white tracking-tight">ROKO Text Quiz</h1>
             <p className="text-gray-600 dark:text-gray-300 mt-3 max-w-3xl mx-auto">
               Level-based quiz, timed mode, leaderboard, AI-generated questions, and PDF certificate generation.
             </p>

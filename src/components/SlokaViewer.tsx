@@ -2,6 +2,7 @@
 import { Search, ChevronRight, Loader2, Volume2 } from 'lucide-react';
 import { supabase, BibleVerse, GitaVerse, QuranAyah } from '../lib/supabase';
 import { useSpeech } from '../hooks/useSpeech';
+import { bibleBookNames, bibleBookMeta, bibleBookIndex } from '../data/bibleBooks';
 
 type Tradition = 'gita' | 'bible' | 'quran';
 type ViewMode = 'single' | 'chapter' | 'search';
@@ -407,20 +408,24 @@ export function SlokaViewer() {
 
         if (queryError) throw queryError;
 
-        const uniqueBooks = Array.from(
-          new Set(
-            ((data ?? []) as BibleBookRow[])
-              .map((row) => row.book ?? '')
-              .filter((book) => book.length > 0)
-          )
-        );
+        const rawBooks = ((data ?? []) as BibleBookRow[])
+          .map((row) => row.book ?? '')
+          .filter((book) => book.length > 0);
 
-        setBibleBooks(uniqueBooks);
-        if (uniqueBooks.length > 0) {
-          setBibleBook((prev) => prev || uniqueBooks[0]);
+        const fromDb = Array.from(new Set(rawBooks));
+        const orderedDb = bibleBookNames.filter((book) => fromDb.includes(book));
+        const extras = fromDb.filter((book) => !bibleBookIndex.has(book));
+        const finalList =
+          orderedDb.length > 0 ? [...orderedDb, ...extras] : [...bibleBookNames];
+
+        setBibleBooks(finalList);
+        if (finalList.length > 0) {
+          setBibleBook((prev) => prev || finalList[0]);
         }
       } catch (err) {
         console.error('Error loading Bible books:', err);
+        setBibleBooks([...bibleBookNames]);
+        setBibleBook((prev) => prev || bibleBookNames[0]);
       } finally {
         setLoadingBibleBooks(false);
       }
@@ -492,9 +497,16 @@ export function SlokaViewer() {
 
         if (queryError) throw queryError;
 
-        const chapters = Array.from(
+        let chapters = Array.from(
           new Set((data ?? []).map((row) => Number(row.chapter)).filter((n) => Number.isFinite(n)))
         ).sort((a, b) => a - b);
+
+        if (chapters.length === 0) {
+          const meta = bibleBookMeta.get(bibleBook);
+          if (meta) {
+            chapters = Array.from({ length: meta.chapters }, (_, idx) => idx + 1);
+          }
+        }
 
         setBibleChapters(chapters);
         if (chapters.length > 0) {

@@ -5,11 +5,11 @@ import HomePage from './components/HomePage';
 import GitaPage from './components/GitaPage';
 import BiblePage from './components/BiblePage';
 import QuranPage from './components/QuranPage';
-import VoiceAssistant from './components/VoiceAssistant';
 import QuizPage from './components/QuizPage';
 import FavoritesPage from './components/FavoritesPage';
 import { SlokaViewer } from './components/SlokaViewer';
 import NotesPage from './components/NotesPage';
+import RokoAssistant from './components/RokoAssistant';
 
 function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -24,8 +24,6 @@ function App() {
         return <BiblePage />;
       case 'quran':
         return <QuranPage />;
-      case 'voice':
-        return <VoiceAssistant />;
       case 'quiz':
         return <QuizPage />;
       case 'favorites':
@@ -34,6 +32,8 @@ function App() {
         return <SlokaViewer />;
       case 'notes':
         return <NotesPage />;
+      case 'roko':
+        return <RokoAssistant />;
       default:
         return <HomePage />;
     }

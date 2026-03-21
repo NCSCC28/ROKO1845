@@ -4,6 +4,7 @@ import { Volume2, Heart, Search, BookOpen, Languages } from 'lucide-react';
 import { useSpeech } from '../hooks/useSpeech';
 import useFavorites from '../hooks/useFavorites';
 import { generateTeluguExplanation } from '../utils/teluguNlp';
+import { askOpenRouter } from '../utils/geminiAi';
 
 export default function GitaPage() {
   const [verses, setVerses] = useState<GitaVerse[]>([]);
@@ -16,6 +17,9 @@ export default function GitaPage() {
   const [teluguExplanations, setTeluguExplanations] = useState<Record<string, string>>({});
   const [loadingExplanationId, setLoadingExplanationId] = useState<string | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [topicQuery, setTopicQuery] = useState('');
+  const [semanticKeywords, setSemanticKeywords] = useState<string[]>([]);
+  const [semanticLoading, setSemanticLoading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(20);
 
   const { speak, isSpeaking } = useSpeech();
@@ -66,8 +70,21 @@ export default function GitaPage() {
         (v.commentary || '').toLowerCase().includes(debouncedSearch)
       );
     }
+    const topics = new Set<string>();
+    const normalized = topicQuery.trim().toLowerCase();
+    if (normalized) normalized.split(/\s+/).forEach((w) => w && topics.add(w));
+    semanticKeywords.forEach((k) => topics.add(k.toLowerCase()));
+    if (topics.size > 0) {
+      list = list.filter((v) => {
+        const text = `${v.translation_en} ${v.translation_hi} ${v.translation_te} ${v.transliteration} ${v.commentary}`.toLowerCase();
+        for (const term of topics) {
+          if (term.length > 2 && text.includes(term)) return true;
+        }
+        return false;
+      });
+    }
     return list;
-  }, [verses, selectedChapter, debouncedSearch]);
+  }, [verses, selectedChapter, debouncedSearch, topicQuery, semanticKeywords]);
 
   useEffect(() => {
     setFilteredVerses(filtered);
@@ -119,6 +136,35 @@ export default function GitaPage() {
       'en-US'
     );
   }, [audioLanguage, ensureTeluguExplanation, speak]);
+
+  const handleSemanticBoost = async () => {
+    const basePrompt = topicQuery || searchQuery;
+    if (!basePrompt.trim()) return;
+    setSemanticLoading(true);
+    try {
+      const response = await askOpenRouter(
+        `Suggest 5 short keywords to find Bhagavad Gita verses about "${basePrompt}". 
+Return a comma-separated list of single words.`
+      );
+      const keywords = response
+        .split(/[,;\n]/)
+        .map((k) => k.trim().toLowerCase())
+        .filter((k) => k.length > 2);
+      setSemanticKeywords(keywords.slice(0, 8));
+    } catch (err) {
+      console.error('Semantic boost failed', err);
+      setSemanticKeywords([]);
+    } finally {
+      setSemanticLoading(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setSelectedChapter(null);
+    setSearchQuery('');
+    setTopicQuery('');
+    setSemanticKeywords([]);
+  };
 
   const handleTeluguExplanation = useCallback(async (verse: GitaVerse) => {
     await ensureTeluguExplanation(verse);
@@ -176,6 +222,54 @@ export default function GitaPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
             />
+          </div>
+
+          {/* Topic + AI semantic */}
+          <div className="mb-5 space-y-3">
+            <div className="flex gap-3 flex-col sm:flex-row sm:items-center">
+              <input
+                type="text"
+                placeholder="Topic or intent (e.g., duty, devotion, detachment, anxiety)"
+                value={topicQuery}
+                onChange={(e) => setTopicQuery(e.target.value)}
+                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <button
+                onClick={handleSemanticBoost}
+                disabled={semanticLoading}
+                className="px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow hover:from-blue-500 hover:to-cyan-400 disabled:opacity-60 transition-all"
+              >
+                {semanticLoading ? 'Thinking…' : 'AI Boost'}
+              </button>
+              <button
+                onClick={clearFilters}
+                className="px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-sm">
+              {['duty', 'devotion', 'detachment', 'wisdom', 'peace', 'courage', 'karma', 'bhakti'].map((topic) => (
+                <button
+                  key={topic}
+                  onClick={() => setTopicQuery(topic)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                    topicQuery === topic
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
+
+            {semanticKeywords.length > 0 && (
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                AI keywords: {semanticKeywords.join(', ')}
+              </p>
+            )}
           </div>
 
           {/* Language Selector */}

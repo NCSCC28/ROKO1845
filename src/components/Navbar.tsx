@@ -1,4 +1,4 @@
-import { Book, BookOpen, Home, Heart, Moon, Sun, MessageCircle, BarChart3 } from 'lucide-react';
+import { Book, BookOpen, Home, Heart, Moon, Sun, BarChart3, MessageCircle } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface NavbarProps {
@@ -15,7 +15,7 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
     { id: 'bible', label: 'Bible', icon: Book },
     { id: 'quran', label: 'Quran', icon: Book },
     { id: 'slokas', label: 'Scripture Search', icon: BookOpen },
-    { id: 'voice', label: 'AI Bot', icon: MessageCircle },
+    { id: 'roko', label: 'Roko AI', icon: MessageCircle },
     { id: 'quiz', label: 'Quiz', icon: BarChart3 },
     { id: 'favorites', label: 'Favorites', icon: Heart },
   ];

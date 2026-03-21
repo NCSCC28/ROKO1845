@@ -5,33 +5,63 @@ import { useSpeech } from '../hooks/useSpeech';
 import useFavorites from '../hooks/useFavorites';
 import { generateTeluguExplanation } from '../utils/teluguNlp';
 import { generateBriefVerseExplanation } from '../utils/verseExplanation';
+import { askOpenRouter } from '../utils/geminiAi';
+import { bibleBooks } from '../data/bibleBooks';
 
 export default function BiblePage() {
   const [verses, setVerses] = useState<BibleVerse[]>([]);
   const [filteredVerses, setFilteredVerses] = useState<BibleVerse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedBook, setSelectedBook] = useState<string | null>(null);
+  const [selectedBook, setSelectedBook] = useState<string | null>(bibleBooks[0]?.name ?? null);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [selectedTestament, setSelectedTestament] = useState<'All' | 'Old' | 'New'>('All');
   const [audioLanguage, setAudioLanguage] = useState<'en' | 'te'>('en');
   const [searchQuery, setSearchQuery] = useState('');
+  const [topicQuery, setTopicQuery] = useState('');
+  const [semanticKeywords, setSemanticKeywords] = useState<string[]>([]);
+  const [semanticLoading, setSemanticLoading] = useState(false);
   const [teluguExplanations, setTeluguExplanations] = useState<Record<string, string>>({});
   const [loadingExplanationId, setLoadingExplanationId] = useState<string | null>(null);
   const { speak, isSpeaking } = useSpeech();
   const { toggleFavorite, isFavorite } = useFavorites();
+  const [availableBooks, setAvailableBooks] = useState<{ name: string; testament: 'Old' | 'New' }[]>([]);
 
   useEffect(() => {
-    loadVerses();
+    // Use static list to avoid repeated/duplicate books; fallback extras are added below.
+    setAvailableBooks(bibleBooks);
+    if (!selectedBook && bibleBooks.length > 0) {
+      setSelectedBook(bibleBooks[0].name);
+    }
   }, []);
 
-  const loadVerses = async () => {
+  useEffect(() => {
+    // whenever book or testament changes, fetch verses for that scope
+    loadVerses(selectedBook, selectedTestament);
+  }, [selectedBook, selectedTestament]);
+
+  const loadVerses = async (book: string | null, testament: 'All' | 'Old' | 'New') => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+
+      const query = supabase
         .from('bible_verses')
         .select('*')
         .order('book', { ascending: true })
         .order('chapter', { ascending: true })
         .order('verse', { ascending: true });
+
+      if (book) {
+        query.eq('book', book);
+      }
+
+      if (testament !== 'All') {
+        query.eq('testament', testament);
+      }
+
+      // cap rows so payload stays light; enough for largest single book (Psalms 150 chapters)
+      query.limit(3000);
+
+      const { data, error } = await query;
 
       if (error) throw error;
       const safeData = data || [];
@@ -42,6 +72,17 @@ export default function BiblePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const baseTopicMap: Record<string, string[]> = {
+    love: ['love', 'loving', 'beloved', 'charity'],
+    faith: ['faith', 'believe', 'belief', 'trust'],
+    anger: ['anger', 'angry', 'wrath', 'rage'],
+    wisdom: ['wisdom', 'wise', 'understanding'],
+    peace: ['peace', 'calm', 'rest'],
+    hope: ['hope', 'hopeful'],
+    anxiety: ['anxiety', 'anxious', 'worry', 'worried', 'fear'],
+    forgiveness: ['forgive', 'forgiveness', 'mercy', 'grace'],
   };
 
   const filterVerses = useCallback(() => {
@@ -67,8 +108,31 @@ export default function BiblePage() {
       );
     }
 
+    // Topic & semantic keywords
+    const topicTerms = new Set<string>();
+    const normalizedTopic = topicQuery.trim().toLowerCase();
+    if (normalizedTopic) {
+      normalizedTopic.split(/\s+/).forEach((word) => {
+        if (word.length >= 3) topicTerms.add(word);
+      });
+      if (baseTopicMap[normalizedTopic]) {
+        baseTopicMap[normalizedTopic].forEach((w) => topicTerms.add(w));
+      }
+    }
+    semanticKeywords.forEach((k) => topicTerms.add(k.toLowerCase()));
+
+    if (topicTerms.size > 0) {
+      filtered = filtered.filter((v) => {
+        const text = `${v.text} ${v.book}`.toLowerCase();
+        for (const term of topicTerms) {
+          if (text.includes(term)) return true;
+        }
+        return false;
+      });
+    }
+
     setFilteredVerses(filtered);
-  }, [selectedBook, selectedChapter, selectedTestament, searchQuery, verses]);
+  }, [selectedBook, selectedChapter, selectedTestament, searchQuery, topicQuery, semanticKeywords, verses]);
 
   useEffect(() => {
     filterVerses();
@@ -107,6 +171,37 @@ export default function BiblePage() {
     await ensureTeluguExplanation(verse);
   }, [ensureTeluguExplanation]);
 
+  const handleSemanticBoost = async () => {
+    const basePrompt = topicQuery || searchQuery;
+    if (!basePrompt.trim()) return;
+    try {
+      setSemanticLoading(true);
+      const response = await askOpenRouter(
+        `Suggest 5 short keywords to find Bible verses about "${basePrompt}". 
+Return a comma-separated list of single words.`
+      );
+      const keywords = response
+        .split(/[,;\n]/)
+        .map((k) => k.trim().toLowerCase())
+        .filter((k) => k.length > 2);
+      setSemanticKeywords(keywords.slice(0, 8));
+    } catch (e) {
+      console.error('Semantic search failed', e);
+      setSemanticKeywords([]);
+    } finally {
+      setSemanticLoading(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setSelectedTestament('All');
+    setSelectedBook(null);
+    setSelectedChapter(null);
+    setSearchQuery('');
+    setTopicQuery('');
+    setSemanticKeywords([]);
+  };
+
   const handleSpeak = useCallback(async (verse: BibleVerse) => {
     const reference = `${verse.book} ${verse.chapter}:${verse.verse}`;
     const briefExplanation = generateBriefVerseExplanation('bible', verse.text, reference);
@@ -124,8 +219,22 @@ export default function BiblePage() {
     speak(`${reference}. ${verse.text} Brief explanation: ${briefExplanation}`, 'en-US');
   }, [audioLanguage, ensureTeluguExplanation, speak]);
 
-  const uniqueBooks = Array.from(new Set(verses.map((v) => v.book)));
-  const chapterOptions = Array.from(
+  const bookButtons = (() => {
+    const base = availableBooks
+      .filter((book) => selectedTestament === 'All' || book.testament === selectedTestament)
+      .map((book) => book.name);
+
+    // include any unexpected book names discovered in data (defensive)
+    const extras = Array.from(new Set(verses.map((v) => v.book))).filter(
+      (book) =>
+        !base.includes(book) &&
+        (selectedTestament === 'All' || verses.find((v) => v.book === book)?.testament === selectedTestament)
+    );
+
+    return [...base, ...extras];
+  })();
+
+  let chapterOptions = Array.from(
     new Set(
       verses
         .filter((v) => (selectedTestament === 'All' ? true : v.testament === selectedTestament))
@@ -133,6 +242,13 @@ export default function BiblePage() {
         .map((v) => v.chapter)
     )
   ).sort((a, b) => a - b);
+
+  if (chapterOptions.length === 0 && selectedBook) {
+    const meta = bibleBooks.find((b) => b.name === selectedBook);
+    if (meta) {
+      chapterOptions = Array.from({ length: meta.chapters }, (_, idx) => idx + 1);
+    }
+  }
 
   if (loading) {
     return (
@@ -165,6 +281,53 @@ export default function BiblePage() {
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
+          </div>
+
+          <div className="mb-4 space-y-3">
+            <div className="flex gap-3 flex-col sm:flex-row sm:items-center">
+              <input
+                type="text"
+                placeholder="Topic or natural language (e.g., anxiety, forgiveness, peace)"
+                value={topicQuery}
+                onChange={(e) => setTopicQuery(e.target.value)}
+                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <button
+                onClick={handleSemanticBoost}
+                disabled={semanticLoading}
+                className="px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow hover:from-blue-500 hover:to-cyan-400 disabled:opacity-60 transition-all"
+              >
+                {semanticLoading ? 'Thinking…' : 'AI Boost'}
+              </button>
+              <button
+                onClick={clearFilters}
+                className="px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-sm">
+              {['love', 'faith', 'anxiety', 'peace', 'wisdom', 'anger', 'forgiveness', 'hope'].map((topic) => (
+                <button
+                  key={topic}
+                  onClick={() => setTopicQuery(topic)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                    topicQuery === topic
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
+
+            {semanticKeywords.length > 0 && (
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                AI keywords: {semanticKeywords.join(', ')}
+              </p>
+            )}
           </div>
 
           <div className="mb-4">
@@ -228,7 +391,7 @@ export default function BiblePage() {
             </div>
           )}
 
-          {uniqueBooks.length > 0 && (
+          {bookButtons.length > 0 && (
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
@@ -243,10 +406,12 @@ export default function BiblePage() {
               >
                 All Books
               </button>
-              {uniqueBooks
+              {bookButtons
                 .filter(book => {
                   if (selectedTestament === 'All') return true;
-                  const verse = verses.find(v => v.book === book);
+                  const meta = bibleBooks.find((b) => b.name === book);
+                  if (meta) return meta.testament === selectedTestament;
+                  const verse = verses.find((v) => v.book === book);
                   return verse?.testament === selectedTestament;
                 })
                 .map(book => (
@@ -282,10 +447,12 @@ export default function BiblePage() {
             filteredVerses.map((verse) => (
               <div
                 key={verse.id}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300"
+                className={`bg-white/95 dark:bg-gray-800/90 rounded-2xl shadow-[0_14px_44px_-22px_rgba(0,0,0,0.55)] hover:shadow-[0_18px_56px_-22px_rgba(0,0,0,0.6)] transition-all duration-300 border-l-4 ${
+                  verse.testament === 'Old' ? 'border-blue-500/80' : 'border-emerald-500/80'
+                }`}
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="text-sm font-semibold text-blue-600 dark:text-blue-500">
+                <div className="flex items-start justify-between mb-5">
+                  <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
                     {verse.book} {verse.chapter}:{verse.verse} ({verse.testament} Testament)
                   </div>
                   <div className="flex space-x-2">
@@ -321,11 +488,11 @@ export default function BiblePage() {
                   </div>
                 </div>
 
-                <p className="text-lg text-gray-700 dark:text-gray-300 leading-relaxed">
+                <p className="mt-4 text-lg text-gray-800 dark:text-gray-100 leading-relaxed">
                   {verse.text}
                 </p>
 
-                <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-900/40">
+                <div className="mt-6 pt-4 border-t border-blue-200 dark:border-blue-900/40">
                   <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-1">
                     Brief Explanation
                   </p>
@@ -356,4 +523,3 @@ export default function BiblePage() {
     </div>
   );
 }
-

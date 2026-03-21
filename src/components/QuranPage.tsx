@@ -5,6 +5,7 @@ import { useSpeech } from '../hooks/useSpeech';
 import useFavorites from '../hooks/useFavorites';
 import { generateTeluguExplanation } from '../utils/teluguNlp';
 import { generateBriefVerseExplanation } from '../utils/verseExplanation';
+import { askOpenRouter } from '../utils/geminiAi';
 
 type TranslationMode = 'arabic' | 'english' | 'both';
 
@@ -48,6 +49,9 @@ export default function QuranPage() {
   const [translationMode, setTranslationMode] = useState<TranslationMode>('both');
   const [audioLanguage, setAudioLanguage] = useState<'ar' | 'en' | 'te'>('en');
   const [searchQuery, setSearchQuery] = useState('');
+  const [topicQuery, setTopicQuery] = useState('');
+  const [semanticKeywords, setSemanticKeywords] = useState<string[]>([]);
+  const [semanticLoading, setSemanticLoading] = useState(false);
   const [ayahs, setAyahs] = useState<QuranAyah[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingSurahs, setLoadingSurahs] = useState(true);
@@ -141,6 +145,38 @@ export default function QuranPage() {
     loadAyahs();
   }, [loadAyahs]);
 
+  const filteredAyahs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const topicTerms = new Set<string>();
+    const normTopic = topicQuery.trim().toLowerCase();
+    if (normTopic) normTopic.split(/\s+/).forEach((w) => w && topicTerms.add(w));
+    semanticKeywords.forEach((k) => topicTerms.add(k.toLowerCase()));
+
+    return sortAyahs(
+      ayahs.filter((a) => {
+        const combined = [
+          a.ayah_en ?? '',
+          a.ayah_ar ?? '',
+          a.ayah_tr ?? '',
+          a.surah_name_en ?? '',
+          a.surah_name_roman ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        if (q && !combined.includes(q)) return false;
+
+        if (topicTerms.size > 0) {
+          for (const term of topicTerms) {
+            if (term.length > 2 && combined.includes(term)) return true;
+          }
+          return false;
+        }
+        return true;
+      })
+    );
+  }, [ayahs, searchQuery, topicQuery, semanticKeywords]);
+
   const ensureTeluguExplanation = useCallback(async (ayah: QuranAyah) => {
     const ayahId = String(ayah.id);
     if (teluguExplanations[ayahId]) {
@@ -205,6 +241,33 @@ export default function QuranPage() {
 
     speak(`${reference}. ${englishText} Brief explanation: ${briefExplanation}`, 'en-US');
   }, [audioLanguage, ensureTeluguExplanation, speak]);
+
+  const handleSemanticBoost = async () => {
+    const basePrompt = topicQuery || searchQuery;
+    if (!basePrompt.trim()) return;
+    setSemanticLoading(true);
+    try {
+      const response = await askOpenRouter(
+        `Suggest 5 short keywords to find Quran ayahs about "${basePrompt}". Return comma-separated single words.`
+      );
+      const keywords = response
+        .split(/[,;\n]/)
+        .map((k) => k.trim().toLowerCase())
+        .filter((k) => k.length > 2);
+      setSemanticKeywords(keywords.slice(0, 8));
+    } catch (err) {
+      console.error('Semantic boost failed', err);
+      setSemanticKeywords([]);
+    } finally {
+      setSemanticLoading(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setTopicQuery('');
+    setSemanticKeywords([]);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 transition-colors duration-300">
@@ -284,6 +347,53 @@ export default function QuranPage() {
             />
           </div>
 
+          <div className="mt-4 space-y-3">
+            <div className="flex gap-3 flex-col sm:flex-row sm:items-center">
+              <input
+                type="text"
+                placeholder="Topic or intent (e.g., mercy, patience, gratitude, anxiety)"
+                value={topicQuery}
+                onChange={(e) => setTopicQuery(e.target.value)}
+                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <button
+                onClick={handleSemanticBoost}
+                disabled={semanticLoading}
+                className="px-4 py-3 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-500 text-white font-semibold shadow hover:from-emerald-500 hover:to-cyan-400 disabled:opacity-60 transition-all"
+              >
+                {semanticLoading ? 'Thinking…' : 'AI Boost'}
+              </button>
+              <button
+                onClick={clearFilters}
+                className="px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-sm">
+              {['mercy', 'patience', 'gratitude', 'forgiveness', 'justice', 'peace', 'hope', 'anxiety'].map((topic) => (
+                <button
+                  key={topic}
+                  onClick={() => setTopicQuery(topic)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                    topicQuery === topic
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
+
+            {semanticKeywords.length > 0 && (
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                AI keywords: {semanticKeywords.join(', ')}
+              </p>
+            )}
+          </div>
+
           {selectedSurahDetails && selectedSurah !== 'all' && (
             <div className="mt-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4">
               <p className="text-sm text-emerald-900 dark:text-emerald-200">
@@ -314,13 +424,13 @@ export default function QuranPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
             <p className="text-gray-600 dark:text-gray-400">Loading Quran verses...</p>
           </div>
-        ) : ayahs.length === 0 ? (
+        ) : filteredAyahs.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 text-center">
             <p className="text-gray-600 dark:text-gray-400">No ayahs found for your filter.</p>
           </div>
         ) : (
           <div className="space-y-6">
-            {ayahs.map((ayah) => (
+            {filteredAyahs.map((ayah) => (
               <div
                 key={ayah.id}
                 className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300"

@@ -1,0 +1,153 @@
+1. Project Overview
+ROKO (Realm of Knowledge and Oneness) is a multi-religious spiritual application providing access to sacred texts from Bhagavad Gita, Bible, and Quran. Built with React/TypeScript frontend and Supabase backend, featuring AI chatbot, semantic search, quiz system, favorites, notes, speech synthesis, and voice recognition. Supports multiple languages (English, Hindi, Telugu, Arabic) with dark/light theme.
+
+2. System Architecture
+Frontend (React/TypeScript/Vite) → Backend (Supabase) → Database (PostgreSQL) → External APIs (OpenRouter, Dialogflow)
+
+3. Class Diagram Data
+Classes:
+- App (main component, manages routing/state)
+  - Attributes: activeTab (string)
+  - Methods: renderContent()
+  - Relationships: uses Navbar, HomePage, GitaPage, BiblePage, QuranPage, QuizPage, FavoritesPage, SlokaViewer, NotesPage, RokoAssistant
+
+- Navbar (navigation component)
+  - Attributes: activeTab (string), isDark (boolean)
+  - Methods: toggleTheme()
+  - Relationships: uses ThemeContext
+
+- HomePage (landing page)
+  - Attributes: dailyVerse (DailyVerseState), loading (boolean)
+  - Methods: loadDailyVerse(), handleSpeak()
+  - Relationships: uses supabase, useSpeech, RokoLogo
+
+- GitaPage (Gita verses viewer)
+  - Attributes: verses (GitaVerse[]), filteredVerses (GitaVerse[]), searchQuery (string), selectedChapter (number), teluguExplanations (Record<string,string>)
+  - Methods: loadVerses(), handleSpeak(), handleSemanticBoost(), ensureTeluguExplanation()
+  - Relationships: uses supabase, useSpeech, useFavorites, generateTeluguExplanation, askOpenRouter
+
+- BiblePage (Bible verses viewer)
+  - Attributes: verses (BibleVerse[]), filteredVerses (BibleVerse[]), searchQuery (string), selectedBook (string), teluguExplanations (Record<string,string>)
+  - Methods: loadVerses(), filterVerses(), handleSpeak()
+  - Relationships: uses supabase, useSpeech, useFavorites, generateTeluguExplanation, generateBriefVerseExplanation
+
+- QuranPage (Quran ayahs viewer)
+  - Attributes: ayahs (QuranAyah[]), selectedSurah (string), translationMode ('arabic'|'english'|'both'), teluguExplanations (Record<string,string>)
+  - Methods: loadSurahs(), loadAyahs(), handleSpeak()
+  - Relationships: uses supabase, useSpeech, useFavorites, generateTeluguExplanation
+
+- QuizPage (quiz system)
+  - Attributes: questions (QuizQuestion[]), currentQuestion (number), score (number)
+  - Methods: loadQuestions(), submitAnswer(), calculateScore()
+  - Relationships: uses supabase
+
+- FavoritesPage (user favorites)
+  - Attributes: favorites (Favorite[])
+  - Methods: loadFavorites(), removeFavorite()
+  - Relationships: uses useFavorites
+
+- SlokaViewer (verse search across texts)
+  - Attributes: searchResults (Verse[]), searchQuery (string)
+  - Methods: performSearch(), displayResults()
+  - Relationships: uses supabase
+
+- NotesPage (user notes/reflections)
+  - Attributes: notes (UserNote[]), currentNote (UserNote)
+  - Methods: saveNote(), loadNotes()
+  - Relationships: uses supabase
+
+- RokoAssistant (AI chatbot)
+  - Attributes: messages (Message[]), isTyping (boolean)
+  - Methods: sendMessage(), handleIntent()
+  - Relationships: uses generateDialogflowReply, generateLocalAiReply
+
+- ThemeContext (theme provider)
+  - Attributes: isDark (boolean)
+  - Methods: toggleTheme()
+  - Relationships: used by Navbar and all pages
+
+Hooks:
+- useSpeech
+  - Attributes: isSpeaking (boolean), voices (SpeechSynthesisVoice[])
+  - Methods: speak(text, lang), stop()
+  - Relationships: uses SpeechSynthesis API
+
+- useFavorites
+  - Attributes: favorites (Favorite[])
+  - Methods: isFavorite(), toggleFavorite(), removeFavorite()
+  - Relationships: uses localStorage
+
+- useGita
+  - Attributes: sloka (SlokaResponse), loading (boolean)
+  - Methods: fetchSlokaByChapterVerse(), fetchSlokasByChapter(), performSearch()
+  - Relationships: uses gitaService
+
+- useVoiceRecognition
+  - Attributes: isListening (boolean), transcript (string)
+  - Methods: startListening(), stopListening()
+  - Relationships: uses SpeechRecognition API
+
+Interfaces:
+- GitaVerse {id, chapter, verse, sanskrit, transliteration, translation_en, translation_hi, commentary, audio_url, created_at}
+- BibleVerse {id, book, chapter, verse, text, testament, audio_url, created_at}
+- QuranAyah {id, surah_no, ayah_no_surah, ayah_ar, ayah_en, juz_no, created_at}
+- UserFavorite {id, user_id, verse_type, verse_id, created_at}
+- DailyVerse {id, date, verse_type, verse_id, created_at}
+- UserNote {id, user_id, tradition, reference_label, note_title, note_body, reflection_body, mood, tags, is_private, created_at}
+- QuizAttempt {id, user_id, religion, level, timed_mode, total_questions, correct_answers, score_percentage, xp_earned, completed_at}
+
+Relationships:
+- App → ThemeProvider (composition)
+- All Page components → supabase (dependency)
+- Page components → useSpeech, useFavorites (dependency)
+- GitaPage, BiblePage, QuranPage → AI utils (dependency)
+- RokoAssistant → Dialogflow/Local AI (dependency)
+
+4. Use Case Diagram Data
+Actors: User, Admin, System
+Use Cases:
+- User: View daily verse, Browse Gita/Bible/Quran, Search verses, Listen to audio, Save favorites, Take quiz, Chat with AI, Add notes, Toggle theme
+- Admin: Manage content (not implemented in current code)
+- System: Generate daily verse, Process AI responses, Handle speech synthesis, Store user data
+
+5. Sequence Diagram Data
+User opens app:
+1. App loads → ThemeProvider initializes
+2. Navbar renders with tabs
+3. HomePage loads → fetches daily verse from daily_verses table
+4. Display verse with audio option
+
+User searches Gita:
+1. GitaPage loads → fetches all verses from gita_verses table
+2. User enters search → filter verses locally
+3. User selects verse → display with translations
+4. User clicks speak → useSpeech synthesizes audio
+
+AI chatbot interaction:
+1. User opens RokoAssistant
+2. User types message → intentHandler processes
+3. If spiritual query → generateDialogflowReply or generateLocalAiReply
+4. Display response with scripture reference
+
+Database queries:
+1. Component calls supabase.from('table').select()
+2. Supabase processes query with RLS policies
+3. Returns data → component updates state
+
+6. Activity Diagram Data
+User opens app → Check theme preference → Load HomePage → Fetch daily verse from database → Display verse → User selects feature
+
+If Gita: Load GitaPage → Fetch verses → User searches/filters → Select verse → Optional: Generate Telugu explanation → Optional: Speak verse → Optional: Add to favorites
+
+If AI Chat: Open RokoAssistant → User inputs message → Detect intent → If verse reference: Fetch from database → If general: Call AI API → Display response
+
+If Quiz: Load QuizPage → Fetch questions → User answers → Calculate score → Save result
+
+All activities can loop back to home or continue to other features. Database operations run in background with loading states.
+
+7. Deployment Diagram Data
+Client Device (Browser) → Web Server (Vite dev server/Netlify) → Supabase Backend → PostgreSQL Database
+External APIs: OpenRouter (AI), Dialogflow (NLP)
+Hosting: Frontend on static hosting, Backend on Supabase Edge Functions
+Communication: HTTPS REST API calls, WebSocket for real-time features (not implemented)
+Data Flow: Client ↔ Supabase ↔ Database ↔ AI APIs

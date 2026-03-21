@@ -7,9 +7,13 @@ const LANG_CHUNK_SIZE_OVERRIDES: Record<string, number> = {
 
 const VOICE_HINTS_BY_LANG: Record<string, string[]> = {
   en: ['google us english', 'microsoft aria', 'microsoft jenny', 'samantha', 'alex', 'daniel'],
-  te: ['telugu', 'te-in', 'india'],
-  hi: ['hindi', 'hi-in', 'india'],
-  ar: ['arabic', 'ar-sa'],
+  te: [
+    'telugu', 'te-in', 'india', 
+    'google telugu', 'microsoft sampath', 'microsoft chandra',
+    'telugu-india', 'te-IN', 'telugu (india)'
+  ],
+  hi: ['hindi', 'hi-in', 'india', 'google hindi', 'microsoft himani'],
+  ar: ['arabic', 'ar-sa', 'google arabic'],
 };
 
 function normalizeLang(lang: string): string {
@@ -100,6 +104,7 @@ function scoreVoice(voice: SpeechSynthesisVoice, lang: string): number {
   const voiceName = voice.name.toLowerCase();
   let score = 0;
 
+  // Exact match gets highest priority
   if (voiceLang === targetLang) {
     score += 120;
   } else if (voiceLang.startsWith(`${targetBase}-`)) {
@@ -108,12 +113,13 @@ function scoreVoice(voice: SpeechSynthesisVoice, lang: string): number {
     score += 70;
   }
 
-  if (voice.default) {
-    score += 15;
+  // Prefer remote voices (Google, etc.) as they typically have better language coverage
+  if (!voice.localService) {
+    score += 25;
   }
 
-  if (voice.localService) {
-    score += 8;
+  if (voice.default) {
+    score += 15;
   }
 
   const hints = VOICE_HINTS_BY_LANG[targetBase] ?? [];
@@ -254,7 +260,27 @@ export function useSpeech() {
 
       const availableVoices =
         voicesRef.current.length > 0 ? voicesRef.current : synthesis.getVoices();
+      
+      // Debug: Log available voices and selected language
+      console.log('[useSpeech] Speaking:', { 
+        lang, 
+        textLength: normalizedText.length,
+        chunksCount: chunks.length,
+        availableVoicesCount: availableVoices.length,
+        voices: availableVoices.map(v => ({ name: v.name, lang: v.lang, localService: v.localService }))
+      });
+      
       const selectedVoice = pickVoice(availableVoices, lang);
+      
+      console.log('[useSpeech] Selected voice:', selectedVoice ? { 
+        name: selectedVoice.name, 
+        lang: selectedVoice.lang 
+      } : 'None - using fallback');
+
+      // Always ensure the lang is set properly, even if no matching voice is found
+      const utteranceLang = selectedVoice?.lang || lang;
+      
+      console.log('[useSpeech] Using language:', utteranceLang, 'for text:', normalizedText.substring(0, 50) + '...');
 
       const speakChunk = (index: number) => {
         if (currentSession !== sessionRef.current) return;
@@ -267,12 +293,12 @@ export function useSpeech() {
         }
 
         const utterance = new SpeechSynthesisUtterance(chunks[index]);
-        utterance.lang = selectedVoice?.lang || lang;
+        utterance.lang = utteranceLang;
         if (selectedVoice) {
           utterance.voice = selectedVoice;
         }
-        utterance.rate = getRateForLang(utterance.lang);
-        utterance.pitch = getPitchForLang(utterance.lang);
+        utterance.rate = getRateForLang(utteranceLang);
+        utterance.pitch = getPitchForLang(utteranceLang);
         utterance.volume = 1;
 
         utterance.onstart = () => {
@@ -307,3 +333,4 @@ export function useSpeech() {
 
   return { speak, stop, isSpeaking, isSupported, voices };
 }
+
