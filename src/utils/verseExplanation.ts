@@ -79,12 +79,22 @@ function countMatches(normalizedText: string, keywords: string[]): number {
   }, 0);
 }
 
-function getFallbackExplanation(tradition: Tradition): string {
+function buildSnippet(text: string, wordLimit = 20): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  const snippet = words.slice(0, wordLimit).join(' ');
+  return words.length > wordLimit ? `${snippet}…` : snippet;
+}
+
+function getFallbackExplanation(tradition: Tradition, text: string): string {
   if (tradition === 'bible') {
     return 'this verse calls for faithful character, wise action, and practical love in everyday life.';
   }
 
-  return 'this ayah invites reflection, sincerity, and disciplined good action in daily life.';
+  // For Quran, avoid identical boilerplate—surface a short snippet of the ayah itself.
+  const snippet = buildSnippet(text, 18);
+  return snippet
+    ? `this ayah emphasizes: "${snippet}"`
+    : 'this ayah invites reflection, sincerity, and disciplined good action in daily life.';
 }
 
 export function generateBriefVerseExplanation(
@@ -107,6 +117,6 @@ export function generateBriefVerseExplanation(
   }
 
   const prefix = referenceLabel ? `In ${referenceLabel}, ` : 'This verse ';
-  const body = bestRule && bestScore > 0 ? bestRule.explanation : getFallbackExplanation(tradition);
+  const body = bestRule && bestScore > 0 ? bestRule.explanation : getFallbackExplanation(tradition, text);
   return `${prefix}${body}`;
 }
