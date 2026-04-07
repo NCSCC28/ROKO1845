@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase, GitaVerse, BibleVerse, QuranAyah } from '../lib/supabase';
-import { Sparkles, Volume2, Heart, BookOpen, Book, MessageCircle, Search, Brain, BarChart3, FileText } from 'lucide-react';
+import { Sparkles, Volume2, Heart, BookOpen, Book, MessageCircle, Search, Brain, BarChart3, BellRing } from 'lucide-react';
 import { useSpeech } from '../hooks/useSpeech';
 import RokoLogo from './RokoLogo';
 
@@ -10,13 +10,47 @@ interface DailyVerseState {
   isFallback?: boolean;
 }
 
+const STREAK_KEY = 'roko_daily_streak_v1';
+
 export default function HomePage() {
   const [dailyVerse, setDailyVerse] = useState<DailyVerseState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [streak, setStreak] = useState(1);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
   const { speak, isSpeaking } = useSpeech();
 
   useEffect(() => {
     loadDailyVerse();
+    const today = getLocalDateString();
+    const yesterday = getYesterdayString();
+
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(STREAK_KEY) : null;
+      const parsed = raw ? JSON.parse(raw) as { streak?: number; lastDate?: string; reminder?: boolean } : {};
+      const savedStreak = Number(parsed.streak) || 1;
+      const savedDate = parsed.lastDate;
+      let nextStreak = 1;
+
+      if (savedDate === today) {
+        nextStreak = savedStreak;
+      } else if (savedDate === yesterday) {
+        nextStreak = savedStreak + 1;
+      }
+
+      setStreak(nextStreak);
+      setReminderEnabled(Boolean(parsed.reminder));
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          STREAK_KEY,
+          JSON.stringify({ streak: nextStreak, lastDate: today, reminder: Boolean(parsed.reminder) })
+        );
+      }
+    } catch (err) {
+      console.error('Error loading streak state', err);
+      setStreak(1);
+      setReminderEnabled(false);
+    }
   }, []);
 
   const getLocalDateString = () => {
@@ -25,6 +59,29 @@ export default function HomePage() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  const getYesterdayString = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const persistStreakState = (currentStreak: number, reminder: boolean) => {
+    if (typeof window === 'undefined') return;
+    const today = getLocalDateString();
+    localStorage.setItem(
+      STREAK_KEY,
+      JSON.stringify({ streak: currentStreak, lastDate: today, reminder })
+    );
+  };
+
+  const handleReminderToggle = (checked: boolean) => {
+    setReminderEnabled(checked);
+    persistStreakState(streak, checked);
   };
 
   const fetchVerseFromDailyRow = async (verseType: string, verseId: string): Promise<DailyVerseState | null> => {
@@ -211,10 +268,6 @@ export default function HomePage() {
             </div>
 
             <div className="mt-7 flex flex-wrap gap-3">
-              <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900 px-4 py-2 text-sm font-medium">
-                <Search className="h-4 w-4" />
-                Scripture Search
-              </span>
               <span className="inline-flex items-center gap-2 rounded-full bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-200 px-4 py-2 text-sm font-medium border border-slate-200 dark:border-slate-700">
                 <MessageCircle className="h-4 w-4" />
                 AI Bot
@@ -385,10 +438,21 @@ export default function HomePage() {
             </div>
             <div className="text-center">
               <div className="h-14 w-14 rounded-full bg-white/90 dark:bg-slate-800 mx-auto flex items-center justify-center shadow-md mb-3">
-                <FileText className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+                <BellRing className="h-7 w-7 text-amber-600 dark:text-amber-400" />
               </div>
-              <h4 className="font-semibold text-slate-900 dark:text-white mb-1">Notes & Reflection</h4>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Capture study notes, personal reflections, tags, mood, and weekly growth.</p>
+              <h4 className="font-semibold text-slate-900 dark:text-white mb-1">Daily Streaks</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Keep your study momentum. Current streak: <span className="font-semibold">{streak} day{streak === 1 ? '' : 's'}</span>.
+              </p>
+              <label className="mt-2 inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 border border-amber-200/60 dark:border-amber-800/50 rounded-full px-3 py-1 bg-white/80 dark:bg-slate-800/80 shadow-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={reminderEnabled}
+                  onChange={(e) => handleReminderToggle(e.target.checked)}
+                  className="h-4 w-4 accent-amber-500"
+                />
+                Remind me daily
+              </label>
             </div>
             <div className="text-center">
               <div className="h-14 w-14 rounded-full bg-white/90 dark:bg-slate-800 mx-auto flex items-center justify-center shadow-md mb-3">

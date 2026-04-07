@@ -14,7 +14,6 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
     { id: 'gita', label: 'Bhagavad Gita', icon: BookOpen },
     { id: 'bible', label: 'Bible', icon: Book },
     { id: 'quran', label: 'Quran', icon: Book },
-    { id: 'slokas', label: 'Scripture Search', icon: BookOpen },
     { id: 'roko', label: 'Roko AI', icon: MessageCircle },
     { id: 'quiz', label: 'Quiz', icon: BarChart3 },
     { id: 'favorites', label: 'Favorites', icon: Heart },

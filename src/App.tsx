@@ -7,7 +7,6 @@ import BiblePage from './components/BiblePage';
 import QuranPage from './components/QuranPage';
 import QuizPage from './components/QuizPage';
 import FavoritesPage from './components/FavoritesPage';
-import { SlokaViewer } from './components/SlokaViewer';
 import NotesPage from './components/NotesPage';
 import RokoAssistant from './components/RokoAssistant';
 
@@ -28,8 +27,6 @@ function App() {
         return <QuizPage />;
       case 'favorites':
         return <FavoritesPage />;
-      case 'slokas':
-        return <SlokaViewer />;
       case 'notes':
         return <NotesPage />;
       case 'roko':
