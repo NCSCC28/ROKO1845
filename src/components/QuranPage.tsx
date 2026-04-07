@@ -218,28 +218,44 @@ export default function QuranPage() {
     const reference = `${ayah.surah_no}:${ayah.ayah_no_surah}`;
     const englishText = (ayah.ayah_en || '').trim();
     const arabicText = (ayah.ayah_ar || '').trim();
+    const verseText = englishText || arabicText;
     const briefExplanation = generateBriefVerseExplanation(
       'quran',
-      (englishText || arabicText).trim(),
+      (verseText || '').trim(),
       reference
     );
 
+    // Always read the verse first, then the short explanation
     if (audioLanguage === 'te') {
       const explanation = await ensureTeluguExplanation(ayah);
-      if (!explanation) {
-        return;
-      }
+      if (!explanation && !verseText) return;
 
-      speak(explanation, 'te-IN');
+      const teluguSpeechParts = [
+        `Surah ${ayah.surah_no}, Ayah ${ayah.ayah_no_surah}.`,
+        verseText, // keeps English/Arabic transliteration before Telugu explanation
+        explanation,
+      ].filter(Boolean);
+
+      speak(teluguSpeechParts.join(' '), 'te-IN');
       return;
     }
 
     if (audioLanguage === 'ar') {
-      speak(`${arabicText} Brief explanation: ${briefExplanation}`, 'ar-SA');
+      const arabicSpeechParts = [
+        arabicText || verseText,
+        englishText ? `Tarjama: ${englishText}` : null,
+        briefExplanation ? `Tafsir khulasa: ${briefExplanation}` : null,
+      ].filter(Boolean);
+      speak(arabicSpeechParts.join(' '), 'ar-SA');
       return;
     }
 
-    speak(`${reference}. ${englishText} Brief explanation: ${briefExplanation}`, 'en-US');
+    const englishSpeechParts = [
+      `${reference}.`,
+      verseText,
+      briefExplanation ? `Brief explanation: ${briefExplanation}` : null,
+    ].filter(Boolean);
+    speak(englishSpeechParts.join(' '), 'en-US');
   }, [audioLanguage, ensureTeluguExplanation, speak]);
 
   const handleSemanticBoost = async () => {
